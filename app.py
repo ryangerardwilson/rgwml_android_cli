@@ -6,12 +6,14 @@ import shutil
 import time
 
 # Static variables for URLs and version numbers
-CMDLINE_TOOLS_URL = 'https://dl.google.com/android/repository/commandlinetools-linux-7583922_latest.zip'
+CMDLINE_TOOLS_URL = 'https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip'
+
 CMDLINE_TOOLS_ZIP = os.path.expanduser('~/cmdline-tools.zip')
 
 GRADLE_VERSION = '7.2'
 GRADLE_URL = f'https://services.gradle.org/distributions/gradle-{GRADLE_VERSION}-bin.zip'
-GRADLE_ZIP = f'/tmp/gradle-{GRADLE_VERSION}-bin.zip'
+#GRADLE_ZIP = f'/tmp/gradle-{GRADLE_VERSION}-bin.zip'
+GRADLE_ZIP = os.path.expanduser(f'~/Downloads/gradle-{GRADLE_VERSION}-bin.zip')
 
 FLUTTER_VERSION = '3.22.0'
 FLUTTER_URL = f'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{FLUTTER_VERSION}-stable.tar.xz'
@@ -27,16 +29,18 @@ ANDROID_VERSION = '30'
 SYSTEM_IMAGE = f"system-images;android-{ANDROID_VERSION};google_apis;x86_64"
 AVD_NAME = 'my_avd'
 
-
-def run_command(command, check=True):
-    """Run a shell command and handle errors."""
-    try:
-        return subprocess.run(command, shell=True, executable="/bin/bash", text=True, capture_output=True, check=check)
-    except subprocess.CalledProcessError as e:
-        if check:
-            print(f"Command failed: {e}")
-            exit(1)
-        return e
+def run_command(command):
+    """Run a shell command and stream the output."""
+    print(f"Running command: {command}", flush=True)
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    while True:
+        output = process.stdout.readline().decode('utf-8')
+        if output == '' and process.poll() is not None:
+            break
+        if output:
+            print(output.strip(), flush=True)
+    rc = process.poll()
+    return rc
 
 
 def uninstall():
@@ -88,31 +92,43 @@ def uninstall():
 
 def install():
     """Install Android SDK tools, packages, Gradle, Flutter, and OpenJDK."""
+
     def download_and_setup_cmdline_tools():
         """Download and set up the command line tools for Android SDK."""
         android_home = os.path.expanduser('~/Android/Sdk')
         cmdline_tools_dir = os.path.join(android_home, 'cmdline-tools')
         latest_dir = os.path.join(cmdline_tools_dir, 'latest')
 
+        cmdline_tools_bin = os.path.join(latest_dir, 'bin')
+
         # Ensure the directory structure exists
         os.makedirs(cmdline_tools_dir, exist_ok=True)
 
-        # Download and extract command line tools
-        run_command(f'wget -O {CMDLINE_TOOLS_ZIP} {CMDLINE_TOOLS_URL}')
-        run_command(f'unzip -o {CMDLINE_TOOLS_ZIP} -d {cmdline_tools_dir}')
-        run_command(f'mv -v {cmdline_tools_dir}/cmdline-tools {latest_dir}')
+        # Check if the command line tools zip file already exists
+        if not os.path.exists(CMDLINE_TOOLS_ZIP):
+            print("Downloading command line tools using curl...", flush=True)
+            run_command(f'curl -o {CMDLINE_TOOLS_ZIP} {CMDLINE_TOOLS_URL}')
+        else:
+            print("Command line tools zip file already exists. Skipping download.", flush=True)
 
-        # Cleanup zip file
-        os.remove(CMDLINE_TOOLS_ZIP)
+        # Check if command-line tools are already extracted
+        if os.path.exists(cmdline_tools_bin) and os.listdir(cmdline_tools_bin):
+            print("Command-line tools already set up. Skipping extraction.", flush=True)
+        else:
+            print("Extracting command line tools...", flush=True)
+            run_command(f'unzip -o {CMDLINE_TOOLS_ZIP} -d {cmdline_tools_dir}')
+            run_command(f'mv -v {cmdline_tools_dir}/cmdline-tools {latest_dir}')
 
         # Set environment variables
         os.environ['ANDROID_HOME'] = android_home
         os.environ['PATH'] += f':{os.path.join(latest_dir, "bin")}:{os.path.join(android_home, "platform-tools")}:$PATH'
 
         # Update .bashrc or .zshrc
-        with open(os.path.expanduser('~/.bashrc'), 'a') as f:
+        bashrc_path = os.path.expanduser('~/.bashrc')
+        with open(bashrc_path, 'a') as f:
             f.write(f'\nexport ANDROID_HOME={android_home}')
             f.write(f'\nexport PATH=$PATH:{os.path.join(latest_dir, "bin")}:{os.path.join(android_home, "platform-tools")}\n')
+
 
     def install_required_packages():
         """Install required packages using the new sdkmanager and download Gradle."""
@@ -122,14 +138,29 @@ def install():
         # Install platform-tools, emulator, and system image
         run_command(f'{sdkmanager_path} --install "platform-tools" "emulator" "system-images;android-30;google_apis;x86_64"')
 
-        # Download and set up Gradle
+        # Create Gradle directory
         gradle_dir = f'/opt/gradle/gradle-{GRADLE_VERSION}'
         run_command(f'sudo mkdir -p /opt/gradle')
-        run_command(f'wget -O {GRADLE_ZIP} {GRADLE_URL}')
-        run_command(f'sudo unzip -o -d /opt/gradle {GRADLE_ZIP}')
 
-        # Cleanup zip file
-        os.remove(GRADLE_ZIP)
+        # Check if the Gradle zip file already exists
+        if not os.path.exists(GRADLE_ZIP):
+            print("Downloading Gradle using curl...", flush=True)
+            run_command(f'curl -o {GRADLE_ZIP} {GRADLE_URL}')
+        else:
+            print("Gradle zip file already exists. Skipping download.", flush=True)
+
+        # Check if Gradle is already extracted
+        gradle_extracted_dir = os.path.join('/opt/gradle', f'gradle-{GRADLE_VERSION}')
+        
+        if not os.path.exists(gradle_extracted_dir):
+            print("Extracting Gradle...", flush=True)
+            run_command(f'sudo unzip -o -d /opt/gradle {GRADLE_ZIP}')
+        else:
+            print("Gradle already extracted. Skipping extraction.", flush=True)
+
+        # Cleanup zip file if needed
+        if os.path.exists(GRADLE_ZIP):
+            os.remove(GRADLE_ZIP)
 
         # Update .bashrc or .zshrc for Gradle
         with open(os.path.expanduser('~/.bashrc'), 'a') as f:
@@ -139,18 +170,32 @@ def install():
         """Download and setup Flutter SDK."""
         flutter_base_dir = os.path.expanduser('~/flutter')
 
-        run_command(f'wget -O {FLUTTER_TAR} {FLUTTER_URL}')
-        if os.path.exists(flutter_base_dir):
-            shutil.rmtree(flutter_base_dir)
-        os.makedirs(flutter_base_dir, exist_ok=True)
-        run_command(f'tar -xf {FLUTTER_TAR} -C {flutter_base_dir} --strip-components=1')
+        # Check if the Flutter tar file already exists
+        if not os.path.exists(FLUTTER_TAR):
+            print("Downloading Flutter SDK using curl...", flush=True)
+            run_command(f'curl -o {FLUTTER_TAR} {FLUTTER_URL}')
+        else:
+            print("Flutter SDK tar file already exists. Skipping download.", flush=True)
 
-        # Cleanup tar file
-        os.remove(FLUTTER_TAR)
+        # Check if Flutter is already extracted
+        if os.path.exists(flutter_base_dir) and os.listdir(flutter_base_dir):
+            print("Flutter SDK already extracted. Skipping extraction.", flush=True)
+        else:
+            if os.path.exists(flutter_base_dir):
+                shutil.rmtree(flutter_base_dir)
+            os.makedirs(flutter_base_dir, exist_ok=True)
+            
+            print("Extracting Flutter SDK...", flush=True)
+            run_command(f'tar -xf {FLUTTER_TAR} -C {flutter_base_dir} --strip-components=1')
+
+        # Cleanup tar file if needed
+        if os.path.exists(FLUTTER_TAR):
+            os.remove(FLUTTER_TAR)
 
         # Update .bashrc or .zshrc for Flutter
         with open(os.path.expanduser('~/.bashrc'), 'a') as f:
             f.write(f'\nexport PATH=$PATH:{flutter_base_dir}/bin\n')
+
 
     def install_openjdk():
         """Install OpenJDK."""
