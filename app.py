@@ -5,22 +5,30 @@ import argparse
 import shutil
 import time
 import tempfile
+from pathlib import Path
+
+
+"""
+LATEST GRADLE VERSION: https://gradle.org/releases/
+LATEST FLUTTER VERSION: https://docs.flutter.dev/release/archive
+LATEST OPEN JDK VERSION: https://openjdk.org/. Note that Andorid versions need to be compatible with their corresponding OpenJDK Verson. Eventhough OpenJDK 22 is out, Andorid 14 (API 34) is compatible with OpenJDK 17. See: https://developer.android.com/build/jdks
+LATEST ANDORID STUDIO COMMAND LINE TOOLS: https://developer.android.com/studio?gad_source=1&gclid=EAIaIQobChMIroWiw6y-hwMVChGDAx1DRStAEAAYASAAEgIXH_D_BwE&gclsrc=aw.ds (at the bottom of the page)
+"""
+
 
 # Static variables for URLs and version numbers
 CMDLINE_TOOLS_URL = 'https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip'
 CMDLINE_TOOLS_ZIP = os.path.expanduser('~/Downloads/commandlinetools.zip')
-#CMDLINE_TOOLS_ZIP = os.path.expanduser('~/cmdline-tools.zip')
 
-GRADLE_VERSION = '7.2'
+GRADLE_VERSION = '8.9'
 GRADLE_URL = f'https://services.gradle.org/distributions/gradle-{GRADLE_VERSION}-bin.zip'
 GRADLE_ZIP = os.path.expanduser(f'~/Downloads/gradle-{GRADLE_VERSION}-bin.zip')
 
 FLUTTER_VERSION = '3.22.3'
 FLUTTER_URL = f'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{FLUTTER_VERSION}-stable.tar.xz'
-FLUTTER_TAR = os.path.expanduser('~/flutter_linux.tar.xz')
+FLUTTER_TAR = os.path.expanduser('~/Downloads/flutter_linux.tar.xz')
 
 OPENJDK_VERSION = '17'
-
 
 # Static variables for emulator configuration
 SDK_DIR = os.path.expanduser('~/Android/Sdk')
@@ -93,66 +101,87 @@ def uninstall():
 def install():
     """Install Android SDK tools, packages, Gradle, Flutter, and OpenJDK."""
 
-    def download_and_setup_cmdline_tools():
-        """Download and set up the command line tools for Android SDK."""
-        android_home = SDK_DIR
-        cmdline_tools_dir = os.path.join(android_home, 'cmdline-tools')
-        latest_dir = os.path.join(cmdline_tools_dir, 'latest')
-        cmdline_tools_bin = os.path.join(latest_dir, 'bin')
-        
-        # Ensure the directory structure exists
-        os.makedirs(cmdline_tools_dir, exist_ok=True)
+    def clean_and_setup_path():
+        """Clean and setup the PATH environment variable."""
+        paths_to_add = [
+            f'{SDK_DIR}/cmdline-tools/latest/bin',
+            f'{SDK_DIR}/platform-tools',
+            f'/opt/gradle/gradle-{GRADLE_VERSION}/bin',
+            f'{os.path.expanduser("~")}/flutter/bin'
+        ]
 
-        # Check if the command line tools zip file already exists
-        if not os.path.exists(CMDLINE_TOOLS_ZIP):
-            print("Downloading command line tools using curl...", flush=True)
-            run_command(f'curl -L -o {CMDLINE_TOOLS_ZIP} {CMDLINE_TOOLS_URL}')
-        else:
-            print("Command line tools zip file already exists. Skipping download.", flush=True)
+        path_entry = ':'.join(paths_to_add)
 
-        # Extract command line tools to a temporary directory
-        if not os.path.exists(cmdline_tools_bin):
-            print("Extracting command line tools...", flush=True)
-            with tempfile.TemporaryDirectory() as temp_dir:
-                run_command(f'unzip -o {CMDLINE_TOOLS_ZIP} -d {temp_dir}')
-                
-                # Move the extracted cmdline-tools directory to its final location
-                extracted_cmdline_tools_dir = os.path.join(temp_dir, 'cmdline-tools')
-                if not os.path.exists(extracted_cmdline_tools_dir):
-                    print("Extraction failed. Ensure the zip contains 'cmdline-tools' directory.")
-                    return
+        # Markers to locate the section in .bashrc
+        start_tag = '### START AUTO-PATH ###'
+        end_tag = '### END AUTO-PATH ###'
+        auto_path_content = f'{start_tag}\nexport PATH=$PATH:{path_entry}\n{end_tag}\n'
 
-                if os.path.exists(latest_dir):
-                    shutil.rmtree(latest_dir)
-                shutil.move(extracted_cmdline_tools_dir, latest_dir)
-        else:
-            print("Command-line tools already set up. Skipping extraction.", flush=True)
-
-        # Verify that sdkmanager exists
-        sdkmanager_path = os.path.join(latest_dir, 'bin', 'sdkmanager')
-        if not os.path.exists(sdkmanager_path):
-            print(f"sdkmanager not found at {sdkmanager_path}")
-            return
-
-        # Set environment variables
-        os.environ['ANDROID_HOME'] = android_home
-        os.environ['PATH'] += f':{cmdline_tools_bin}:{os.path.join(android_home, "platform-tools")}'
-
-        # Update .bashrc or .zshrc
         bashrc_path = os.path.expanduser('~/.bashrc')
-        with open(bashrc_path, 'a+') as f:
-            f.seek(0)  # Move cursor to the beginning of the file
+        with open(bashrc_path, 'r+') as f:
             content = f.read()
-            if f'export ANDROID_HOME={android_home}' not in content:
-                f.write(f'\nexport ANDROID_HOME={android_home}')
-            if f'export PATH=$PATH:{cmdline_tools_bin}:{os.path.join(android_home, "platform-tools")}' not in content:
-                f.write(f'\nexport PATH=$PATH:{cmdline_tools_bin}:{os.path.join(android_home, "platform-tools")}\n')
+            
+            # Find the section marked by the comment tags
+            start_index = content.find(start_tag)
+            end_index = content.find(end_tag, start_index)
+            
+            if start_index == -1 or end_index == -1:
+                # If tags not found, append at the end
+                f.seek(0, os.SEEK_END)
+                f.write(auto_path_content)
+            else:
+                # Replace the existing section between tags
+                end_index += len(end_tag)
+                before_section = content[:start_index]
+                after_section = content[end_index:].lstrip()
+                new_content = f'{before_section}{auto_path_content}{after_section}'
+                f.seek(0)
+                f.write(new_content)
+                f.truncate()
 
+        # Manually source the updated .bashrc to apply changes immediately
+        os.system('source ~/.bashrc')
+
+        # Print path for debugging
+        new_path = os.popen('echo $PATH').read().strip()
+        print(f"Current PATH: {new_path}", flush=True)
+
+    def set_java_home():
+        java_home_path = f"/usr/lib/jvm/java-{OPENJDK_VERSION}-openjdk-amd64"
+        os.environ['JAVA_HOME'] = java_home_path
+        
+        start_tag = '### START JAVA HOME ###'
+        end_tag = '### END JAVA HOME ###'
+        java_home_content = f'{start_tag}\nexport JAVA_HOME={java_home_path}\n{end_tag}\n'
+
+        bashrc_path = os.path.expanduser('~/.bashrc')
+        with open(bashrc_path, 'r+') as f:
+            content = f.read()
+            
+            # Find the section marked by the comment tags
+            start_index = content.find(start_tag)
+            end_index = content.find(end_tag, start_index)
+            
+            if start_index == -1 or end_index == -1:
+                # If tags not found, append at the end
+                f.seek(0, os.SEEK_END)
+                f.write(java_home_content)
+            else:
+                # Replace the existing section between tags
+                end_index += len(end_tag)
+                before_section = content[:start_index]
+                after_section = content[end_index:].lstrip()
+                new_content = f'{before_section}{java_home_content}{after_section}'
+                f.seek(0)
+                f.write(new_content)
+                f.truncate()
 
 
     def install_required_packages():
         """Install required packages using the new sdkmanager and download Gradle."""
-        android_home = os.path.expanduser('~/Android/Sdk')
+        set_java_home()
+        os.system('source ~/.bashrc')
+        android_home = SDK_DIR
         sdkmanager_path = os.path.join(android_home, 'cmdline-tools/latest/bin/sdkmanager')
 
         # Install platform-tools, emulator, and system image
@@ -160,7 +189,7 @@ def install():
 
         # Create Gradle directory
         gradle_dir = f'/opt/gradle/gradle-{GRADLE_VERSION}'
-        run_command(f'sudo mkdir -p /opt/gradle')
+        run_command('sudo mkdir -p /opt/gradle')
 
         # Check if the Gradle zip file already exists
         if not os.path.exists(GRADLE_ZIP):
@@ -171,60 +200,25 @@ def install():
 
         # Check if Gradle is already extracted
         gradle_extracted_dir = os.path.join('/opt/gradle', f'gradle-{GRADLE_VERSION}')
-        
-        if not os.path.exists(gradle_extracted_dir):
-            print("Extracting Gradle...", flush=True)
-            run_command(f'sudo unzip -o -d /opt/gradle {GRADLE_ZIP}')
-        else:
-            print("Gradle already extracted. Skipping extraction.", flush=True)
+
+        try:
+            if not os.path.exists(gradle_extracted_dir):
+                print("Extracting Gradle...", flush=True)
+                run_command(f'sudo unzip -o -d /opt/gradle {GRADLE_ZIP}')
+            else:
+                print("Gradle already extracted. Skipping extraction.", flush=True)
+        except Exception as e:
+            print(f"Error during Gradle extraction: {e}", flush=True)
 
         # Cleanup zip file if needed
         if os.path.exists(GRADLE_ZIP):
             os.remove(GRADLE_ZIP)
 
-        # Update .bashrc or .zshrc for Gradle
-        with open(os.path.expanduser('~/.bashrc'), 'a') as f:
-            f.write(f'\nexport PATH=$PATH:{gradle_dir}/bin\n')
+        # Clean and set up PATH
+        clean_and_setup_path()
 
-    def install_flutter():
-        """Download and setup Flutter SDK, and update PATH environment variable."""
-        flutter_base_dir = os.path.expanduser('~/flutter')
 
-        # Check if the Flutter tar file already exists
-        if not os.path.exists(FLUTTER_TAR):
-            print("Downloading Flutter SDK using curl...", flush=True)
-            run_command(f'curl -o {FLUTTER_TAR} {FLUTTER_URL}')
-        else:
-            print("Flutter SDK tar file already exists. Skipping download.", flush=True)
-
-        # Check if Flutter is already extracted
-        if os.path.exists(flutter_base_dir) and os.listdir(flutter_base_dir):
-            print("Flutter SDK already extracted. Skipping extraction.", flush=True)
-        else:
-            if os.path.exists(flutter_base_dir):
-                shutil.rmtree(flutter_base_dir)
-            os.makedirs(flutter_base_dir, exist_ok=True)
-
-            print("Extracting Flutter SDK...", flush=True)
-            run_command(f'tar -xf {FLUTTER_TAR} -C {flutter_base_dir} --strip-components=1')
-
-        # Cleanup tar file if needed
-        if os.path.exists(FLUTTER_TAR):
-            os.remove(FLUTTER_TAR)
-
-        # Update .bashrc if the PATH for Flutter is not already set
-        bashrc_path = os.path.expanduser('~/.bashrc')
-        path_entry = f'export PATH=$PATH:{flutter_base_dir}/bin'
-
-        # Read and check if PATH entry exists
-        with open(bashrc_path, 'r') as file:
-            lines = file.readlines()
-            if path_entry not in [line.strip() for line in lines]:
-                print("Updating .bashrc to include Flutter in PATH.", flush=True)
-                with open(bashrc_path, 'a') as file:
-                    file.write(f'\n{path_entry}\n')
-            else:
-                print("Flutter path already in .bashrc. Skipping update.", flush=True)
+    # Define other functions (uninstall, install_openjdk, etc.) and call them.
 
     def uninstall_old_jdk():
         """Uninstall all old JDK versions."""
@@ -253,8 +247,9 @@ def install():
         print(f"OpenJDK {OPENJDK_VERSION} installed.")
 
         # Set the default Java version
-        java_path = f"/usr/lib/jvm/java-{OPENJDK_VERSION}-openjdk-amd64/bin/java"
-        javac_path = f"/usr/lib/jvm/java-{OPENJDK_VERSION}-openjdk-amd64/bin/javac"
+        java_home_path = f"/usr/lib/jvm/java-{OPENJDK_VERSION}-openjdk-amd64"
+        java_path = f"{java_home_path}/bin/java"
+        javac_path = f"{java_home_path}/bin/javac"
 
         run_command(f'sudo update-alternatives --install /usr/bin/java java {java_path} 1')
         run_command(f'sudo update-alternatives --set java {java_path}')
@@ -264,6 +259,176 @@ def install():
 
         # Verify the Java version
         run_command("java -version")
+
+        # Set JAVA_HOME in .bashrc
+        bashrc_path = os.path.expanduser('~/.bashrc')
+        start_tag = '### START JAVA HOME ###'
+        end_tag = '### END JAVA HOME ###'
+        java_home_content = f'{start_tag}\nexport JAVA_HOME={java_home_path}\n{end_tag}\n'
+
+        with open(bashrc_path, 'r+') as f:
+            content = f.read()
+            
+            # Find the section marked by the comment tags
+            start_index = content.find(start_tag)
+            end_index = content.find(end_tag, start_index)
+            
+            if start_index == -1 or end_index == -1:
+                # If tags not found, append at the end
+                f.seek(0, os.SEEK_END)
+                f.write(java_home_content)
+            else:
+                # Replace the existing section between tags
+                end_index += len(end_tag)
+                before_section = content[:start_index]
+                after_section = content[end_index:].lstrip()
+                new_content = f'{before_section}{java_home_content}{after_section}'
+                f.seek(0)
+                f.write(new_content)
+                f.truncate()
+
+        # Manually source the updated .bashrc to apply changes immediately
+        os.system('source ~/.bashrc')
+
+
+    def download_and_setup_cmdline_tools():
+        """Download and set up the command line tools for Android SDK."""
+        android_home = SDK_DIR
+        cmdline_tools_dir = os.path.join(android_home, 'cmdline-tools')
+        latest_dir = os.path.join(cmdline_tools_dir, 'latest')
+        cmdline_tools_bin = os.path.join(latest_dir, 'bin')
+
+        # Ensure the directory structure exists
+        os.makedirs(cmdline_tools_dir, exist_ok=True)
+
+        # Check if the command line tools zip file already exists
+        if not os.path.exists(CMDLINE_TOOLS_ZIP):
+            print("Downloading command line tools using curl...", flush=True)
+            run_command(f'curl -L -o {CMDLINE_TOOLS_ZIP} {CMDLINE_TOOLS_URL}')
+        else:
+            print("Command line tools zip file already exists. Skipping download.", flush=True)
+
+        # Extract command line tools to a temporary directory
+        if not os.path.exists(cmdline_tools_bin):
+            print("Extracting command line tools...", flush=True)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                run_command(f'unzip -o {CMDLINE_TOOLS_ZIP} -d {temp_dir}')
+
+                # Move the extracted cmdline-tools directory to its final location
+                extracted_cmdline_tools_dir = os.path.join(temp_dir, 'cmdline-tools')
+                if not os.path.exists(extracted_cmdline_tools_dir):
+                    print("Extraction failed. Ensure the zip contains 'cmdline-tools' directory.")
+                    return
+
+                if os.path.exists(latest_dir):
+                    shutil.rmtree(latest_dir)
+                shutil.move(extracted_cmdline_tools_dir, latest_dir)
+        else:
+            print("Command-line tools already set up. Skipping extraction.", flush=True)
+
+        # Verify that sdkmanager exists
+        sdkmanager_path = os.path.join(latest_dir, 'bin', 'sdkmanager')
+        if not os.path.exists(sdkmanager_path):
+            print(f"sdkmanager not found at {sdkmanager_path}")
+            return
+
+        # Set environment variables
+        os.environ['ANDROID_HOME'] = android_home
+        os.environ['PATH'] += f':{cmdline_tools_bin}:{os.path.join(android_home, "platform-tools")}'
+
+        # Update .bashrc or .zshrc
+        bashrc_path = os.path.expanduser('~/.bashrc')
+        start_tag = '### START CMDLINE TOOLS ###'
+        end_tag = '### END CMDLINE TOOLS ###'
+        tools_content = (
+            f'{start_tag}\n'
+            f'export ANDROID_HOME={android_home}\n'
+            f'export PATH={cmdline_tools_bin}:{os.path.join(android_home, "platform-tools")}:$PATH\n'
+            f'{end_tag}\n'
+        )
+
+        with open(bashrc_path, 'r+') as f:
+            content = f.read()
+
+            # Find the section marked by the comment tags
+            start_index = content.find(start_tag)
+            end_index = content.find(end_tag, start_index)
+
+            if start_index == -1 or end_index == -1:
+                # If tags not found, append at the end
+                f.seek(0, os.SEEK_END)
+                f.write(tools_content)
+            else:
+                # Replace the existing section between tags
+                end_index += len(end_tag)
+                before_tools = content[:start_index]
+                after_tools = content[end_index:]
+
+                new_content = f'{before_tools}{tools_content}{after_tools}'
+                f.seek(0)
+                f.write(new_content)
+                f.truncate()
+
+    def install_flutter():
+        """Download and setup Flutter SDK, and update PATH environment variable."""
+        flutter_base_dir = os.path.expanduser('~/flutter')
+
+        # Check if the Flutter tar file already exists
+        if not os.path.exists(FLUTTER_TAR):
+            print("Downloading Flutter SDK using curl...", flush=True)
+            run_command(f'curl -o {FLUTTER_TAR} {FLUTTER_URL}')
+        else:
+            print("Flutter SDK tar file already exists. Skipping download.", flush=True)
+
+        # Check if Flutter is already extracted
+        if os.path.exists(flutter_base_dir) and os.listdir(flutter_base_dir):
+            print("Flutter SDK already extracted. Skipping extraction.", flush=True)
+        else:
+            if os.path.exists(flutter_base_dir):
+                shutil.rmtree(flutter_base_dir)
+            os.makedirs(flutter_base_dir, exist_ok=True)
+
+            print("Extracting Flutter SDK...", flush=True)
+            run_command(f'tar -xf {FLUTTER_TAR} -C {flutter_base_dir} --strip-components=1')
+
+        # Cleanup tar file if needed
+        if os.path.exists(FLUTTER_TAR):
+            os.remove(FLUTTER_TAR)
+
+        # Update .bashrc to include Flutter in PATH
+        bashrc_path = os.path.expanduser('~/.bashrc')
+        start_tag = '### START FLUTTER PATH ###'
+        end_tag = '### END FLUTTER PATH ###'
+        flutter_path_entry = f'export PATH=$PATH:{flutter_base_dir}/bin'
+
+        flutter_content = (
+            f'{start_tag}\n'
+            f'{flutter_path_entry}\n'
+            f'{end_tag}\n'
+        )
+
+        with open(bashrc_path, 'r+') as f:
+            content = f.read()
+
+            # Find the section marked by the comment tags
+            start_index = content.find(start_tag)
+            end_index = content.find(end_tag, start_index)
+
+            if start_index == -1 or end_index == -1:
+                # If tags not found, append at the end
+                f.seek(0, os.SEEK_END)
+                f.write(flutter_content)
+            else:
+                # Replace the existing section between tags
+                end_index += len(end_tag)
+                before_flutter = content[:start_index]
+                after_flutter = content[end_index:]
+
+                new_content = f'{before_flutter}{flutter_content}{after_flutter}'
+                f.seek(0)
+                f.write(new_content)
+                f.truncate()
+
 
 
     print("Removing previous installations before fresh install...")
@@ -277,16 +442,22 @@ def install():
     print("Setting up Flutter SDK...")
     install_flutter()
     print("Setup complete! Please run the following command to update the environment variables:\n")
-    print("source ~/.bashrc")
-
-def create_shell_script(script_path, script_content):
-    """Create a shell script with the given content."""
-    with open(script_path, 'w') as file:
-        file.write(script_content)
-    os.chmod(script_path, 0o755)
+    #print("source ~/.bashrc")
+    os.system('source ~/.bashrc')
+    run_command("java -version")
+    run_command("flutter --version")
+    #run_command("gradle --version")
 
 def create_flutter_app(app_name):
     """Create a new Flutter app and add custom shell scripts."""
+
+    def create_shell_script(script_path, script_content):
+        """Create a shell script with the given content."""
+        with open(script_path, 'w') as file:
+            file.write(script_content)
+        os.chmod(script_path, 0o755)
+
+
     # Paths and environment
     flutter_path = os.path.expanduser('~/flutter/bin')
     android_home = os.path.expanduser('~/Android/Sdk')
@@ -435,47 +606,48 @@ echo "You can now manually adjust any additional configurations or settings as r
 
     print("Custom scripts 'upload.sh' and 'flutter_framework_upgrade.sh' have been added to the project root.")
 
-def kill_emulators():
-    print("Killing all active emulators...")
-    result = subprocess.run(['pkill', '-f', 'emulator -avd'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode == 0:
-        print("All emulators killed.")
-    else:
-        print("No emulators to kill or error occurred.")
-
-
-def clear_cache():
-    print("Clearing the Android SDK manager cache...")
-    cache_dir = os.path.expanduser('~/.android/cache')
-    if os.path.exists(cache_dir):
-        shutil.rmtree(cache_dir)
-        print("Cache cleared.")
-    else:
-        print("Cache directory does not exist. No action required.")
-
-def dynamically_get_java_home():
-    """Dynamically get the JAVA_HOME path for the specified JDK version."""
-    java_paths = subprocess.getoutput("sudo update-alternatives --list java").splitlines()
-    for path in java_paths:
-        if f"java-{OPENJDK_VERSION}-openjdk-amd64" in path:
-            return os.path.dirname(os.path.dirname(path))
-    return None
-
-def setup_java_environment():
-    # Ensure the correct JDK is installed
-    #install_openjdk()
-    
-    # Dynamically set JAVA_HOME
-    java_home = dynamically_get_java_home()
-    if java_home and os.path.exists(java_home):
-        os.environ["JAVA_HOME"] = java_home
-        os.environ["PATH"] = f"{java_home}/bin:" + os.environ["PATH"]
-        print(f"JAVA_HOME set to {java_home}")
-    else:
-        print(f"Error: JAVA_HOME path does not exist: {java_home}")
-
-
 def run_emulator():
+
+    def kill_emulators():
+        print("Killing all active emulators...")
+        result = subprocess.run(['pkill', '-f', 'emulator -avd'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            print("All emulators killed.")
+        else:
+            print("No emulators to kill or error occurred.")
+
+
+    def clear_cache():
+        print("Clearing the Android SDK manager cache...")
+        cache_dir = os.path.expanduser('~/.android/cache')
+        if os.path.exists(cache_dir):
+            shutil.rmtree(cache_dir)
+            print("Cache cleared.")
+        else:
+            print("Cache directory does not exist. No action required.")
+
+    def dynamically_get_java_home():
+        """Dynamically get the JAVA_HOME path for the specified JDK version."""
+        java_paths = subprocess.getoutput("sudo update-alternatives --list java").splitlines()
+        for path in java_paths:
+            if f"java-{OPENJDK_VERSION}-openjdk-amd64" in path:
+                return os.path.dirname(os.path.dirname(path))
+        return None
+
+    def setup_java_environment():
+        # Ensure the correct JDK is installed
+        #install_openjdk()
+
+        # Dynamically set JAVA_HOME
+        java_home = dynamically_get_java_home()
+        if java_home and os.path.exists(java_home):
+            os.environ["JAVA_HOME"] = java_home
+            os.environ["PATH"] = f"{java_home}/bin:" + os.environ["PATH"]
+            print(f"JAVA_HOME set to {java_home}")
+        else:
+            print(f"Error: JAVA_HOME path does not exist: {java_home}")
+
+
     print("Running emulator...")
 
     setup_java_environment()
@@ -492,7 +664,7 @@ def run_emulator():
         download_and_setup_cmdline_tools()  # Attempt to set up the SDK manager again
 
     print(f"Installing system image: {SYSTEM_IMAGE}")
-    result = subprocess.run(['java', '-classpath', sdkmanager_path, 'com.android.sdklib.tool.sdkmanager.SdkManagerCli', '--install', SYSTEM_IMAGE], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run([sdkmanager_path, '--install', SYSTEM_IMAGE], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode == 0:
         print("System image installed.")
     else:
@@ -506,7 +678,7 @@ def run_emulator():
         return
 
     avd_name = "test_AVD"
-    result = subprocess.run([avdmanager_path, 'create', 'avd', '-n', avd_name, '-k', SYSTEM_IMAGE, '--device', 'pixel'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run([avdmanager_path, 'create', 'avd', '-n', avd_name, '-k', SYSTEM_IMAGE, '--device', 'pixel', '--force'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode == 0:
         print("AVD created.")
     else:
@@ -526,48 +698,12 @@ def run_emulator():
     time.sleep(30)
     print("Emulator should be running now.")
 
-
-def run_new_emulator():
-    print("Running new (maiden) emulator...")
-
-    # Kill all active emulators
-    kill_emulators()
-    
-    # Clear cache
-    clear_cache()
-    
-    # Ensure system image is installed
-    sdkmanager_path = os.path.join(SDK_DIR, 'cmdline-tools/latest/bin/sdkmanager')
-    print(f"Installing system image: {SYSTEM_IMAGE}")
-    result = subprocess.run([sdkmanager_path, '--install', SYSTEM_IMAGE], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode == 0:
-        print("System image installed.")
-    else:
-        print("Failed to install system image.")
-        return
-
-    # Create new (maiden) AVD
-    new_avd_name = AVD_NAME + "_new"
-    avdmanager_path = os.path.join(SDK_DIR, 'cmdline-tools/latest/bin/avdmanager')
-    print(f"Creating new AVD: {new_avd_name}")
-    subprocess.run([avdmanager_path, 'create', 'avd', '-n', new_avd_name, '-k', SYSTEM_IMAGE, '--device', EMULATOR_DEVICE], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    # Start New Emulator
-    emulator_path = os.path.join(SDK_DIR, 'emulator/emulator')
-    print(f"Starting new emulator: {new_avd_name}")
-    subprocess.Popen([emulator_path, '-avd', new_avd_name])
-
-    # Allow time for the emulator to start
-    time.sleep(30)
-    print("New emulator should be running now.")
-
 def main():
     parser = argparse.ArgumentParser(description="Install or Uninstall Android SDK, Gradle, Flutter, OpenJDK, and manage Flutter apps.")
     parser.add_argument('--install', action='store_true', help='Install the tools')
     parser.add_argument('--uninstall', action='store_true', help='Uninstall the tools')
     parser.add_argument('--create', type=str, metavar='APP_NAME', help='Create a new Flutter app with the specified name')
     parser.add_argument('--emulator', action='store_true', help='Run an Android emulator')
-    parser.add_argument('--new', action='store_true', help='Run a fresh new Android emulator')
 
     args = parser.parse_args()
 
@@ -577,13 +713,10 @@ def main():
         uninstall()
     elif args.create:
         create_flutter_app(args.create)
-    elif args.emulator and args.new:
-        run_new_emulator()
     elif args.emulator:
         run_emulator()
     else:
         print("Please specify --install, --uninstall, --create APP_NAME, or --emulator")
-
 
 if __name__ == "__main__":
     main()
