@@ -10,7 +10,7 @@ from pathlib import Path
 
 """
 LATEST GRADLE VERSION: https://gradle.org/releases/
-LATEST FLUTTER VERSION: https://docs.flutter.dev/release/archive
+LATEST FLUTTER VERSION: https://docs.flutter.dev/release/archive. That said, its best to trust the snap store's judgment on the most stable version of flutter.
 LATEST OPEN JDK VERSION: https://openjdk.org/. Note that Andorid versions need to be compatible with their corresponding OpenJDK Verson. Eventhough OpenJDK 22 is out, Andorid 14 (API 34) is compatible with OpenJDK 17. See: https://developer.android.com/build/jdks
 LATEST ANDORID STUDIO COMMAND LINE TOOLS: https://developer.android.com/studio?gad_source=1&gclid=EAIaIQobChMIroWiw6y-hwMVChGDAx1DRStAEAAYASAAEgIXH_D_BwE&gclsrc=aw.ds (at the bottom of the page)
 """
@@ -21,13 +21,8 @@ CMDLINE_TOOLS_URL = 'https://dl.google.com/android/repository/commandlinetools-l
 CMDLINE_TOOLS_ZIP = os.path.expanduser('~/Downloads/commandlinetools.zip')
 
 GRADLE_VERSION = '8.9'
-GRADLE_URL = f'https://services.gradle.org/distributions/gradle-{GRADLE_VERSION}-bin.zip'
-GRADLE_ZIP = os.path.expanduser(f'~/Downloads/gradle-{GRADLE_VERSION}-bin.zip')
 
-FLUTTER_VERSION = '3.22.3'
-FLUTTER_URL = f'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{FLUTTER_VERSION}-stable.tar.xz'
-FLUTTER_TAR = os.path.expanduser('~/Downloads/flutter_linux.tar.xz')
-
+FLUTTER_VERSION_CHANNEL = 'stable'
 OPENJDK_VERSION = '17'
 
 # Static variables for emulator configuration
@@ -49,6 +44,18 @@ def run_command(command):
             print(output.strip(), flush=True)
     rc = process.poll()
     return rc
+
+def run_command_explicit(command):
+    """Run a system command and print its output."""
+    print(f"Running command: {command}")
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    stdout, stderr = process.communicate()
+    if stdout:
+        print(stdout)
+    if stderr:
+        print(stderr)
+    process.wait()
+    return process.returncode == 0
 
 
 def uninstall():
@@ -89,7 +96,7 @@ def uninstall():
         print(f"OpenJDK {OPENJDK_VERSION} uninstalled.")
 
     print("Uninstalling command-line tools...")
-    uninstall_cmdline_tools()
+    #uninstall_cmdline_tools()
     print("Uninstalling Gradle...")
     uninstall_gradle()
     print("Uninstalling Flutter...")
@@ -106,13 +113,12 @@ def install():
         paths_to_add = [
             f'{SDK_DIR}/cmdline-tools/latest/bin',
             f'{SDK_DIR}/platform-tools',
-            f'/opt/gradle/gradle-{GRADLE_VERSION}/bin',
+            '/usr/bin/gradle',  # Gradle binary location when installed via apt
             f'{os.path.expanduser("~")}/flutter/bin'
         ]
 
         path_entry = ':'.join(paths_to_add)
 
-        # Markers to locate the section in .bashrc
         start_tag = '### START AUTO-PATH ###'
         end_tag = '### END AUTO-PATH ###'
         auto_path_content = f'{start_tag}\nexport PATH=$PATH:{path_entry}\n{end_tag}\n'
@@ -120,11 +126,11 @@ def install():
         bashrc_path = os.path.expanduser('~/.bashrc')
         with open(bashrc_path, 'r+') as f:
             content = f.read()
-            
+
             # Find the section marked by the comment tags
             start_index = content.find(start_tag)
             end_index = content.find(end_tag, start_index)
-            
+
             if start_index == -1 or end_index == -1:
                 # If tags not found, append at the end
                 f.seek(0, os.SEEK_END)
@@ -149,7 +155,7 @@ def install():
     def set_java_home():
         java_home_path = f"/usr/lib/jvm/java-{OPENJDK_VERSION}-openjdk-amd64"
         os.environ['JAVA_HOME'] = java_home_path
-        
+
         start_tag = '### START JAVA HOME ###'
         end_tag = '### END JAVA HOME ###'
         java_home_content = f'{start_tag}\nexport JAVA_HOME={java_home_path}\n{end_tag}\n'
@@ -157,11 +163,11 @@ def install():
         bashrc_path = os.path.expanduser('~/.bashrc')
         with open(bashrc_path, 'r+') as f:
             content = f.read()
-            
+
             # Find the section marked by the comment tags
             start_index = content.find(start_tag)
             end_index = content.find(end_tag, start_index)
-            
+
             if start_index == -1 or end_index == -1:
                 # If tags not found, append at the end
                 f.seek(0, os.SEEK_END)
@@ -176,63 +182,30 @@ def install():
                 f.write(new_content)
                 f.truncate()
 
-
     def install_required_packages():
-        """Install required packages using the new sdkmanager and download Gradle."""
+        """Install required packages using apt and setup environment."""
         set_java_home()
         os.system('source ~/.bashrc')
+
+        # Install required packages via apt
+        os.system('sudo apt update')
+        os.system(f'sudo apt install -y openjdk-{OPENJDK_VERSION}-jdk')  # Ensure this matches the OPENJDK_VERSION
+        os.system('sudo apt install -y gradle')
+
         android_home = SDK_DIR
         sdkmanager_path = os.path.join(android_home, 'cmdline-tools/latest/bin/sdkmanager')
 
         # Install platform-tools, emulator, and system image
-        run_command(f'{sdkmanager_path} --install "platform-tools" "emulator" "system-images;android-30;google_apis;x86_64"')
-
-        # Create Gradle directory
-        gradle_dir = f'/opt/gradle/gradle-{GRADLE_VERSION}'
-        run_command('sudo mkdir -p /opt/gradle')
-
-        # Check if the Gradle zip file already exists
-        if not os.path.exists(GRADLE_ZIP):
-            print("Downloading Gradle using curl...", flush=True)
-            run_command(f'curl -o {GRADLE_ZIP} {GRADLE_URL}')
-        else:
-            print("Gradle zip file already exists. Skipping download.", flush=True)
-
-        # Check if Gradle is already extracted
-        gradle_extracted_dir = os.path.join('/opt/gradle', f'gradle-{GRADLE_VERSION}')
-
-        try:
-            if not os.path.exists(gradle_extracted_dir):
-                print("Extracting Gradle...", flush=True)
-                run_command(f'sudo unzip -o -d /opt/gradle {GRADLE_ZIP}')
-            else:
-                print("Gradle already extracted. Skipping extraction.", flush=True)
-        except Exception as e:
-            print(f"Error during Gradle extraction: {e}", flush=True)
-
-        # Cleanup zip file if needed
-        if os.path.exists(GRADLE_ZIP):
-            os.remove(GRADLE_ZIP)
+        os.system(f'{sdkmanager_path} --install "platform-tools" "emulator" "system-images;android-30;google_apis;x86_64"')
 
         # Clean and set up PATH
         clean_and_setup_path()
 
 
     # Define other functions (uninstall, install_openjdk, etc.) and call them.
-
     def uninstall_old_jdk():
-        """Uninstall all old JDK versions."""
-        installed_jdks = subprocess.getoutput("dpkg -l | grep openjdk").splitlines()
-
-        for jdk in installed_jdks:
-            jdk_package = jdk.split()[1]
-            if f"openjdk-{OPENJDK_VERSION}" not in jdk_package:
-                print(f"Removing {jdk_package}...")
-                success = run_command(f'sudo apt-get remove -y {jdk_package}')
-                if success:
-                    print(f"Successfully removed {jdk_package}.")
-                else:
-                    print(f"Failed to remove {jdk_package}.")
+        """Uninstall old JDK versions."""
+        run_command('sudo apt-get remove --purge -y openjdk-* || true')
 
     def install_openjdk():
         """Install OpenJDK."""
@@ -268,11 +241,11 @@ def install():
 
         with open(bashrc_path, 'r+') as f:
             content = f.read()
-            
+
             # Find the section marked by the comment tags
             start_index = content.find(start_tag)
             end_index = content.find(end_tag, start_index)
-            
+
             if start_index == -1 or end_index == -1:
                 # If tags not found, append at the end
                 f.seek(0, os.SEEK_END)
@@ -287,8 +260,9 @@ def install():
                 f.write(new_content)
                 f.truncate()
 
-        # Manually source the updated .bashrc to apply changes immediately
-        os.system('source ~/.bashrc')
+        # Inform the user to update the environment variables
+        print("Installation complete! Please restart your terminal or run the following command to update the environment variables:")
+        print("source ~/.bashrc")
 
 
     def download_and_setup_cmdline_tools():
@@ -370,36 +344,24 @@ def install():
                 f.truncate()
 
     def install_flutter():
-        """Download and setup Flutter SDK, and update PATH environment variable."""
-        flutter_base_dir = os.path.expanduser('~/flutter')
+        """Install Flutter SDK using Snap and update PATH environment variable."""
+        # Check if Flutter is already installed and uninstall it
+        print("Checking if Flutter is already installed...")
+        result = run_command('snap list | grep flutter')
+        if result:
+            print("Existing Flutter installation found. Removing it...")
+            run_command('sudo snap remove flutter')
+            print("Existing Flutter installation removed.")
 
-        # Check if the Flutter tar file already exists
-        if not os.path.exists(FLUTTER_TAR):
-            print("Downloading Flutter SDK using curl...", flush=True)
-            run_command(f'curl -o {FLUTTER_TAR} {FLUTTER_URL}')
-        else:
-            print("Flutter SDK tar file already exists. Skipping download.", flush=True)
+        # Install Flutter via Snap with the specified channel
+        print(f"Installing Flutter {FLUTTER_VERSION_CHANNEL} via Snap...")
+        run_command(f'sudo snap install flutter --classic --channel={FLUTTER_VERSION_CHANNEL}')
 
-        # Check if Flutter is already extracted
-        if os.path.exists(flutter_base_dir) and os.listdir(flutter_base_dir):
-            print("Flutter SDK already extracted. Skipping extraction.", flush=True)
-        else:
-            if os.path.exists(flutter_base_dir):
-                shutil.rmtree(flutter_base_dir)
-            os.makedirs(flutter_base_dir, exist_ok=True)
-
-            print("Extracting Flutter SDK...", flush=True)
-            run_command(f'tar -xf {FLUTTER_TAR} -C {flutter_base_dir} --strip-components=1')
-
-        # Cleanup tar file if needed
-        if os.path.exists(FLUTTER_TAR):
-            os.remove(FLUTTER_TAR)
-
-        # Update .bashrc to include Flutter in PATH
+        # Update .bashrc to include Flutter in PATH (Snap typically handles this)
         bashrc_path = os.path.expanduser('~/.bashrc')
         start_tag = '### START FLUTTER PATH ###'
         end_tag = '### END FLUTTER PATH ###'
-        flutter_path_entry = f'export PATH=$PATH:{flutter_base_dir}/bin'
+        flutter_path_entry = 'export PATH=$PATH:/snap/bin'
 
         flutter_content = (
             f'{start_tag}\n'
@@ -422,12 +384,14 @@ def install():
                 # Replace the existing section between tags
                 end_index += len(end_tag)
                 before_flutter = content[:start_index]
-                after_flutter = content[end_index:]
+                after_flutter = content[end_index:].lstrip()
 
                 new_content = f'{before_flutter}{flutter_content}{after_flutter}'
                 f.seek(0)
                 f.write(new_content)
                 f.truncate()
+
+        # Inform the user to update the environment variables
 
 
 
@@ -443,10 +407,9 @@ def install():
     install_flutter()
     print("Setup complete! Please run the following command to update the environment variables:\n")
     #print("source ~/.bashrc")
-    os.system('source ~/.bashrc')
-    run_command("java -version")
+    run_command_explicit("java -version")
     run_command("flutter --version")
-    #run_command("gradle --version")
+    run_command("gradle --version")
 
 def create_flutter_app(app_name):
     """Create a new Flutter app and add custom shell scripts."""
