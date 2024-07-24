@@ -58,53 +58,6 @@ def run_command_explicit(command):
     return process.returncode == 0
 
 
-def uninstall():
-    """Uninstall existing Android SDK tools, Gradle, Flutter, and OpenJDK."""
-    def uninstall_cmdline_tools():
-        """Uninstall existing command line tools for Android SDK."""
-        android_home = os.path.expanduser('~/Android/Sdk')
-        cmdline_tools_dir = os.path.join(android_home, 'cmdline-tools')
-
-        if os.path.exists(cmdline_tools_dir):
-            shutil.rmtree(cmdline_tools_dir)
-            print(f"Removed directory: {cmdline_tools_dir}")
-        else:
-            print("No previous command-line tools installation found.")
-
-    def uninstall_gradle():
-        """Uninstall Gradle by removing the installation directory."""
-        gradle_base_dir = '/opt/gradle'
-        if os.path.exists(gradle_base_dir):
-            run_command(f'sudo rm -rf {gradle_base_dir}')
-            print(f"Removed directory: {gradle_base_dir}")
-        else:
-            print("No previous Gradle installation found.")
-
-    def uninstall_flutter():
-        """Uninstall Flutter SDK by removing the installation directory."""
-        flutter_base_dir = os.path.expanduser('~/flutter')
-        if os.path.exists(flutter_base_dir):
-            shutil.rmtree(flutter_base_dir)
-            print(f"Removed directory: {flutter_base_dir}")
-        else:
-            print("No previous Flutter installation found.")
-
-    def uninstall_openjdk():
-        """Uninstall OpenJDK."""
-        run_command(f'sudo apt-get remove -y openjdk-{OPENJDK_VERSION}-jdk')
-        run_command('sudo apt-get autoremove -y')
-        print(f"OpenJDK {OPENJDK_VERSION} uninstalled.")
-
-    print("Uninstalling command-line tools...")
-    #uninstall_cmdline_tools()
-    print("Uninstalling Gradle...")
-    uninstall_gradle()
-    print("Uninstalling Flutter...")
-    uninstall_flutter()
-    print("Uninstalling OpenJDK...")
-    uninstall_openjdk()
-    print("Uninstallation complete!")
-
 def install():
     """Install Android SDK tools, packages, Gradle, Flutter, and OpenJDK."""
 
@@ -395,8 +348,6 @@ def install():
 
 
 
-    print("Removing previous installations before fresh install...")
-    uninstall()
     print("Setting up OpenJDK...")
     install_openjdk()
     print("Setting up command-line tools...")
@@ -664,7 +615,6 @@ def run_emulator():
 def main():
     parser = argparse.ArgumentParser(description="Install or Uninstall Android SDK, Gradle, Flutter, OpenJDK, and manage Flutter apps.")
     parser.add_argument('--install', action='store_true', help='Install the tools')
-    parser.add_argument('--uninstall', action='store_true', help='Uninstall the tools')
     parser.add_argument('--create', type=str, metavar='APP_NAME', help='Create a new Flutter app with the specified name')
     parser.add_argument('--emulator', action='store_true', help='Run an Android emulator')
 
@@ -672,8 +622,6 @@ def main():
 
     if args.install:
         install()
-    elif args.uninstall:
-        uninstall()
     elif args.create:
         create_flutter_app(args.create)
     elif args.emulator:
