@@ -492,7 +492,7 @@ chmod +x "$PROJECT_DIR/upload.sh"  # Ensure upload.sh remains executable
 
 # Step 4: Add the local rgwml_fl package to pubspec.yaml if it's missing
 echo "Adding local rgwml_fl package as a dependency..."
-awk '/^dependencies:/ {print; print "  rgwml_fl:\\n    path: '"$LOCAL_PACKAGE_PATH"'"; next}1' "$PROJECT_DIR/pubspec.yaml" > "$PROJECT_DIR/pubspec_temp.yaml"
+awk '/^dependencies:/ {print; print "  rgwml_fl:\n    path: '"$LOCAL_PACKAGE_PATH"'"; next}1' "$PROJECT_DIR/pubspec.yaml" > "$PROJECT_DIR/pubspec_temp.yaml"
 mv "$PROJECT_DIR/pubspec_temp.yaml" "$PROJECT_DIR/pubspec.yaml"
 
 # Step 5: Run flutter pub get to install all dependencies
