@@ -7,14 +7,6 @@ import time
 import tempfile
 from pathlib import Path
 
-
-"""
-LATEST GRADLE VERSION: https://gradle.org/releases/
-LATEST FLUTTER VERSION: https://docs.flutter.dev/release/archive. That said, its best to trust the snap store's judgment on the most stable version of flutter.
-LATEST OPEN JDK VERSION: https://openjdk.org/. Note that Andorid versions need to be compatible with their corresponding OpenJDK Verson. Eventhough OpenJDK 22 is out, Andorid 14 (API 34) is compatible with OpenJDK 17. See: https://developer.android.com/build/jdks
-LATEST ANDORID STUDIO COMMAND LINE TOOLS: https://developer.android.com/studio?gad_source=1&gclid=EAIaIQobChMIroWiw6y-hwMVChGDAx1DRStAEAAYASAAEgIXH_D_BwE&gclsrc=aw.ds (at the bottom of the page)
-"""
-
 def run_command(command):
     """Run a shell command and handle errors."""
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -35,21 +27,17 @@ def install():
         # Step (a) & (b): Update/Install Android Studio and Flutter from the snap store
         print("Installing/updating Android Studio...")
         output, error = run_command("sudo snap install android-studio --classic")
-        #print(f"Command output: {output}")
         if "already installed" in error:
             print("Android Studio is already installed.")
             output, error = run_command("sudo snap refresh android-studio")
-            #print(f"Command output: {output}")
             if "no updates available" in error:
                 print("Android Studio has no updates available.")
 
         print("Installing/updating Flutter...")
         output, error = run_command("sudo snap install flutter --classic")
-        #print(f"Command output: {output}")
         if "already installed" in error:
             print("Flutter is already installed.")
             output, error = run_command("sudo snap refresh flutter")
-            #print(f"Command output: {output}")
             if "no updates available" in error:
                 print("Flutter has no updates available.")
 
@@ -78,7 +66,7 @@ def install():
         print(".bashrc updated successfully.")
 
         # Step (e): Prompt user to update Android Studio settings
-        input("Please open Android Studio, go to 'More actions' >> 'SDK Tools', "
+        input("Please open Android Studio, go to 'More actions' >> 'SDK Manager' >> 'SDK Tools', "
               "and select 'Android SDK Command Line Tools (latest)' AND 'Android Emulator'. "
               "Press Enter when you have done this...")
 
@@ -93,7 +81,7 @@ def install():
     setup_flutter_android()
 
 def main():
-    parser = argparse.ArgumentParser(description="Install or Uninstall Android SDK, Gradle, Flutter, OpenJDK, and manage Flutter apps.")
+    parser = argparse.ArgumentParser(description="Install or Uninstall Android Studio and Flutter")
     parser.add_argument('--install', action='store_true', help='Install the tools')
 
     args = parser.parse_args()
